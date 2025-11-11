@@ -53,4 +53,3 @@ dotnet run -c Release
 - Application whitelist/blacklist
 - Customizable toast appearance (colors, fonts, duration)
 - Fade-in/out animations
-
