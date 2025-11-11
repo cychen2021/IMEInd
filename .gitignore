@@ -593,9 +593,6 @@ bld/
 # Visual Studio cache/options directory
 .vs/
 
-# Visual Studio Code
-.vscode/
-
 # JetBrains Rider
 .idea/
 *.sln.iml
