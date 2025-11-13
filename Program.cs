@@ -16,14 +16,36 @@ internal static class Program
         ApplicationConfiguration.Initialize();
         var indicator = new ToastForm();
 
+        // Create tray icon
+        var trayIcon = new NotifyIcon
+        {
+            Icon = SystemIcons.Information, // Default icon, you can replace with custom .ico
+            Text = "IME Indicator",
+            Visible = true
+        };
+
+        // Create context menu
+        var contextMenu = new ContextMenuStrip();
+        var exitMenuItem = new ToolStripMenuItem("Exit");
+        exitMenuItem.Click += (s, e) =>
+        {
+            trayIcon.Visible = false;
+            Application.Exit();
+        };
+        contextMenu.Items.Add(exitMenuItem);
+        trayIcon.ContextMenuStrip = contextMenu;
+
         Automation.AddAutomationFocusChangedEventHandler(OnFocusChanged);
         SystemEventsWrapper.OnInputLangChange += () =>
         {
             indicator.ShowToast("IME: " + InputMethodName.GetCurrent());
         };
 
-        Application.Run(new ApplicationContext()); // trayless background
+        Application.Run(new ApplicationContext());
+
+        // Cleanup
         Automation.RemoveAllEventHandlers();
+        trayIcon.Dispose();
 
         void OnFocusChanged(object? sender, AutomationFocusChangedEventArgs e)
         {
