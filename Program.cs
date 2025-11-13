@@ -69,7 +69,7 @@ internal static class Program
 
     static Point GetScreenPoint(AutomationElement el)
     {
-        // 优先取文本插入符附近矩形（若支持 TextPattern）
+        // Prefer rectangle near the text caret (if TextPattern is supported)
         if (el.TryGetCurrentPattern(TextPattern.Pattern, out var pat) && pat is TextPattern tp)
         {
             try
@@ -84,14 +84,14 @@ internal static class Program
             }
             catch { }
         }
-        // 退化：用元素矩形上方
+        // Fallback: position above the element's bounding rectangle
         try
         {
             var b = el.Current.BoundingRectangle;
             return new Point((int)(b.Left + b.Width / 2), Math.Max(0, (int)b.Top - 30));
         }
         catch { }
-        // 兜底：屏幕顶部中间
+        // Last resort: top-center of the screen
         return new Point(Screen.PrimaryScreen!.Bounds.Width / 2, 20);
     }
 }
@@ -161,7 +161,7 @@ public static class InputMethodName
 
 public static class SystemEventsWrapper
 {
-    // 简易：轮询 HKL 变化（120ms），变了就回调一次（足够灵敏）
+    // Simple: poll HKL changes (120 ms); trigger callback on change (responsive enough)
     static SystemEventsWrapper()
     {
         var t = new System.Windows.Forms.Timer { Interval = 120 };
