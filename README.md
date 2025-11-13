@@ -53,3 +53,7 @@ dotnet run -c Release
 - Application whitelist/blacklist
 - Customizable toast appearance (colors, fonts, duration)
 - Fade-in/out animations
+
+## Attribution
+
+- Tray icon: See [licenses/icon.pdf](licenses/icon.pdf) for icon attribution and license information.

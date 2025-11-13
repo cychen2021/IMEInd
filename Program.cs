@@ -5,6 +5,7 @@ using System.Drawing;
 using System.Runtime.InteropServices;
 using System.Windows.Forms;
 using System.Windows.Automation;
+using System.Reflection;
 
 namespace IMEInd;
 
@@ -16,10 +17,27 @@ internal static class Program
         ApplicationConfiguration.Initialize();
         var indicator = new ToastForm();
 
+        // Load icon from embedded resource
+        Icon? trayIconImage = null;
+        try
+        {
+            var assembly = Assembly.GetExecutingAssembly();
+            var resourceName = "IMEInd.resources.icon.ico";
+            using var stream = assembly.GetManifestResourceStream(resourceName);
+            if (stream != null)
+            {
+                trayIconImage = new Icon(stream);
+            }
+        }
+        catch
+        {
+            // Fallback to system icon if loading fails
+        }
+
         // Create tray icon
         var trayIcon = new NotifyIcon
         {
-            Icon = SystemIcons.Information, // Default icon, you can replace with custom .ico
+            Icon = trayIconImage ?? SystemIcons.Information,
             Text = "IME Indicator",
             Visible = true
         };

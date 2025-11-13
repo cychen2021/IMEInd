@@ -19,4 +19,8 @@
     <IncludeNativeLibrariesForSelfExtract>true</IncludeNativeLibrariesForSelfExtract>
   </PropertyGroup>
 
+  <ItemGroup>
+    <EmbeddedResource Include="resources/icon.ico" />
+  </ItemGroup>
+
 </Project>
