@@ -102,6 +102,7 @@ class App
 
     private DateTime lastToastTime = DateTime.MinValue;
     private IME? lastIME = null;
+    private nint lastWindow = IntPtr.Zero;
 
     IME GetCurrent()
     {
@@ -111,6 +112,7 @@ class App
         ushort langID = (ushort)((ulong)hkl & 0xFFFF);
         lastIME = new IME(langID);
         lastToastTime = DateTime.Now;
+        lastWindow = h;
         return lastIME;
     }
 
@@ -118,8 +120,9 @@ class App
     {
         var previousIME = lastIME;
         var previousTime = lastToastTime;
+        var previousWindow = lastWindow;
         var currentIME = GetCurrent();
-        if (DateTime.Now.Subtract(previousTime).TotalMinutes > 5 || previousIME != currentIME)
+        if (DateTime.Now.Subtract(previousTime).TotalMinutes > 5 || previousIME != currentIME || previousWindow != lastWindow)
         {
             indicator.ShowToast($"{currentIME.Name}");
             return true;
