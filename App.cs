@@ -523,15 +523,15 @@ class App
                 {
                     if (h != lastWindow)
                     {
-                        log($"Last screen: {lastScreen.DeviceName}, New screen: {GetScreenFromWindowHandle(h).DeviceName}");
+                        log($"Last screen: {lastScreen.DeviceName}, New screen: {GetScreenFromWindowHandle(h).DeviceName}, Time since last change: {(now - lastTime).TotalSeconds} seconds");
                     }
                 }
-                if (h != lastWindow && ((now - lastTime).TotalSeconds >= 300 || GetScreenFromWindowHandle(h) != lastScreen))
+                if (h != lastWindow && ((now - lastTime).TotalSeconds >= 300 || GetScreenFromWindowHandle(h).DeviceName != lastScreen.DeviceName))
                 {
                     lastWindow = h;
-                    forceUpdateScreen();
                     forceUpdateTime();
                     forceUpdateIME();
+                    forceUpdateScreen();
                     if (LogLevel >= 2)
                     {
                         log($"Window changed to: {lastWindow}, IME: {lastIME.LangID}, Screen: {lastScreen.DeviceName}, Time: {lastTime}");
