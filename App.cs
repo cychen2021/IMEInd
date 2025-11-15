@@ -240,7 +240,7 @@ class App
     {
         if (LogLevel >= 2)
         {
-            log($"Showing IME toast: {ime.Name} on screen {screen.DeviceName}");
+            log($"Showing IME toast: {ime.LangID} on screen {screen.DeviceName}");
         }
         indicator.ShowToast($"{ime.Name}", screen);
     }
@@ -336,8 +336,12 @@ class App
 
         IME GetCurrentIME()
         {
-            var h = GetForegroundWindow();
-            var tid = GetWindowThreadProcessId(h, out _);
+            // Prefer the raw focused element handle (if available) because
+            // the focused control may be hosted on a different thread than
+            // the top-level window (observed with Notepad / edit controls).
+            var (_, w, raw) = GetCurrentElementAndForegroundWindow();
+            IntPtr hwndForThread = raw != 0 ? (IntPtr)raw : (IntPtr)w;
+            var tid = GetWindowThreadProcessId(hwndForThread, out _);
             var hkl = GetKeyboardLayout(tid);
             ushort LangID = (ushort)((ulong)hkl & 0xFFFF);
             return new IME(LangID);
@@ -411,7 +415,7 @@ class App
             return candidate;
         }
 
-        private nint GetForegroundInputWindow()
+        private (AutomationElement?, nint, nint) GetCurrentElementAndForegroundWindow()
         {
             AutomationElement? el;
             try
@@ -434,6 +438,12 @@ class App
 
             var candidate = GetRealWindow(rawHandle, el);
 
+            return (el, candidate, rawHandle);
+        }
+
+        private nint GetForegroundInputWindow()
+        {
+            var (el, candidate, rawHandle) = GetCurrentElementAndForegroundWindow();
             if (lastWindow == IntPtr.Zero)
             {
                 if (LogLevel >= 2)
@@ -460,7 +470,7 @@ class App
             // If candidate differs from lastWindow, prefer the fresh candidate even if not editable to avoid staleness.
             if (candidate != IntPtr.Zero && candidate != lastWindow)
             {
-                if (LogLevel >= 2)
+                if (LogLevel >= 3)
                 {
                     log($"Non-editable focus; updating window to new handle: {candidate}");
                 }
@@ -527,6 +537,20 @@ class App
                 {
                     log($"Checked IME: {currentIME.LangID}, Last IME: {lastIME.LangID}");
                 }
+                if (currentIME != lastIME)
+                {
+                    lastIME = currentIME;
+                    forceUpdateTime();
+                    forceUpdateWindow();
+                    if (LogLevel >= 2)
+                    {
+                        log($"IME changed to: {lastIME.LangID}, Window: {lastWindow}, Screen: {lastScreen.DeviceName}, Time: {lastTime}");
+                    }
+                    OnInputLangChange?.Invoke(lastIME, lastScreen);
+                }
+            };
+            timer.Tick += (_, __) =>
+            {
                 var currentWindow = GetForegroundInputWindow();
                 var now = DateTime.Now;
                 if (LogLevel >= 3)
@@ -554,18 +578,11 @@ class App
                     }
                     OnFocusChanged?.Invoke(lastIME, lastScreen);
                 }
-                else if (currentIME != lastIME)
-                {
-                    lastIME = currentIME;
-                    forceUpdateTime();
-                    forceUpdateWindow();
-                    if (LogLevel >= 2)
-                    {
-                        log($"IME changed to: {lastIME.LangID}, Window: {lastWindow}, Screen: {lastScreen.DeviceName}, Time: {lastTime}");
-                    }
-                    OnInputLangChange?.Invoke(lastIME, lastScreen);
-                }
-                else if ((now - lastTime).TotalMinutes >= 60)
+            };
+            timer.Tick += (_, __) =>
+            {
+                var now = DateTime.Now;
+                if ((now - lastTime).TotalMinutes >= 60)
                 {
                     lastTime = now;
                     forceUpdateIME();
