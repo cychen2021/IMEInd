@@ -65,6 +65,7 @@ sealed class ToastForm : Form
 
         AutoSize = true;
         AutoSizeMode = AutoSizeMode.GrowAndShrink;
+        TopMost = true;
         _timer = new System.Windows.Forms.Timer { Interval = 5000 };
         _timer.Tick += (_, __) => Hide();
     }
@@ -412,7 +413,15 @@ class App
 
         private nint GetForegroundInputWindow()
         {
-            var el = AutomationElement.FocusedElement;
+            AutomationElement? el;
+            try
+            {
+                el = AutomationElement.FocusedElement;
+            }
+            catch
+            {
+                el = null;
+            }
             IntPtr rawHandle = IntPtr.Zero;
             if (el != null)
             {
