@@ -51,14 +51,17 @@ sealed class ToastForm : Form
         _timer = new System.Windows.Forms.Timer { Interval = 5000 };
         _timer.Tick += (_, __) => Hide();
     }
-    public void ShowToast(string text, Point? near = null)
+    public void ShowToast(string text, Screen screen)
     {
         // Ensure UI updates happen on the UI thread
         if (InvokeRequired)
         {
-            BeginInvoke(new Action(() => ShowToast(text, near)));
+            BeginInvoke(new Action(() => ShowToast(text, screen)));
             return;
         }
+        var centerX = screen.Bounds.X + screen.Bounds.Width / 2;
+        var y = screen.Bounds.Y + screen.Bounds.Height - 100 - Height;
+        var nearPoint = new Point(centerX, Math.Max(screen.Bounds.Y, y));
 
         _label.Text = text;
         // Ensure layout reflects new text/icon sizes before positioning
@@ -67,9 +70,8 @@ sealed class ToastForm : Form
         _label.Location = new Point(_icon.Width, 0);
 
         Opacity = 0.95;
-        Location = near.HasValue
-            ? new Point(Math.Max(0, near.Value.X - Width / 2), Math.Max(0, near.Value.Y))
-            : new Point(Screen.PrimaryScreen!.Bounds.Width / 2 - Width / 2, Screen.PrimaryScreen!.Bounds.Height - Height - 100);
+
+        Location = nearPoint;
 
         Show();
         // Restart timer on UI thread so Tick will fire correctly
@@ -158,8 +160,15 @@ class App
         DebugRecord debugRecord = new DebugRecord();
         if (element == null)
             return (false, debugRecord);
-
-        var ct = element.Current.ControlType;
+        ControlType ct;
+        try
+        {
+            ct = element.Current.ControlType;
+        }
+        catch
+        {
+            return (false, debugRecord);
+        }
 #if DEBUG
         debugRecord.controlType = ct.LocalizedControlType;
 #endif
@@ -209,13 +218,13 @@ class App
         return (false, debugRecord);
     }
 
-    public void Show(ToastForm indicator, IME ime, nint windowHandler)
+    public void Show(ToastForm indicator, IME ime, Screen screen)
     {
-        Screen screen = GetScreenFromWindowHandle(windowHandler);
-        var centerX = screen.Bounds.X + screen.Bounds.Width / 2;
-        var y = screen.Bounds.Y + screen.Bounds.Height - 100 - indicator.Height;
-        var nearPoint = new Point(centerX, Math.Max(screen.Bounds.Y, y));
-        indicator.ShowToast($"{ime.Name}", nearPoint);
+        if (LogLevel >= 2)
+        {
+            log($"Showing IME toast: {ime.Name} on screen {screen.DeviceName}");
+        }
+        indicator.ShowToast($"{ime.Name}", screen);
     }
 
     [STAThread]
@@ -269,18 +278,18 @@ class App
         contextMenu.Items.Add(exitMenuItem);
         trayIcon.ContextMenuStrip = contextMenu;
 
-        listener.OnInputLangChange += (ime, windowHandler) =>
+        listener.OnInputLangChange += (ime, screen) =>
         {
-            Show(indicator, ime, windowHandler);
+            Show(indicator, ime, screen);
         };
 
-        listener.OnFocusChanged += (ime, windowHandler) =>
+        listener.OnFocusChanged += (ime, screen) =>
         {
-            Show(indicator, ime, windowHandler);
+            Show(indicator, ime, screen);
         };
-        listener.FirstRun += (ime, windowHandler) =>
+        listener.FirstRun += (ime, screen) =>
         {
-            Show(indicator, ime, windowHandler);
+            Show(indicator, ime, screen);
         };
 
         listener.Start();
@@ -459,7 +468,7 @@ class App
             {
                 log($"Initial IME: {lastIME.LangID}, Window: {lastWindow}, Screen: {lastScreen.DeviceName}, Time: {lastTime}");
             }
-            FirstRun?.Invoke(lastIME, lastWindow);
+            FirstRun?.Invoke(lastIME, lastScreen);
             timer.Start();
         }
 
@@ -497,7 +506,7 @@ class App
                     {
                         log($"IME changed to: {lastIME.LangID}, Window: {lastWindow}, Screen: {lastScreen.DeviceName}, Time: {lastTime}");
                     }
-                    OnInputLangChange?.Invoke(lastIME, lastWindow);
+                    OnInputLangChange?.Invoke(lastIME, lastScreen);
                 }
             };
             timer.Tick += (_, __) =>
@@ -527,12 +536,12 @@ class App
                     {
                         log($"Window changed to: {lastWindow}, IME: {lastIME.LangID}, Screen: {lastScreen.DeviceName}, Time: {lastTime}");
                     }
-                    OnFocusChanged?.Invoke(lastIME, lastWindow);
+                    OnFocusChanged?.Invoke(lastIME, lastScreen);
                 }
             };
         }
 
-        public delegate void Action(IME ime, nint hwnd);
+        public delegate void Action(IME ime, Screen screen);
 
         public event Action? OnInputLangChange;
         public event Action? OnFocusChanged;
