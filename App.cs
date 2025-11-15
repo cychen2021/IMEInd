@@ -1,9 +1,7 @@
-using System;
-using System.Drawing;
 using System.Runtime.InteropServices;
-using System.Windows.Forms;
 using System.Windows.Automation;
 using System.Reflection;
+using System.Diagnostics;
 namespace IMEInd;
 
 sealed class ToastForm : Form
@@ -83,9 +81,16 @@ sealed class ToastForm : Form
 
 class App
 {
+    public static void log(string msg)
+    {
+        Console.Error.WriteLine($"[LOGGING] {msg}");
+    }
+    public static int LogLevel = 2; // 0: None, 1: Error, 2: Info, 3: Debug
+
     [DllImport("user32.dll")] static extern IntPtr GetForegroundWindow();
     [DllImport("user32.dll")] static extern uint GetWindowThreadProcessId(IntPtr hWnd, out uint lpdwProcessId);
     [DllImport("user32.dll")] static extern IntPtr GetKeyboardLayout(uint idThread);
+    [DllImport("user32.dll")] static extern IntPtr GetDesktopWindow();
 #if DEBUG
     [DllImport("kernel32.dll")] static extern bool AllocConsole();
 #endif
@@ -117,6 +122,91 @@ class App
             // Fallback to primary screen if anything goes wrong
             return Screen.PrimaryScreen!;
         }
+    }
+
+    private record struct DebugRecord(
+        nint? hWnd,
+        string? controlType,
+        string? uiElement,
+        bool? isValuePattern,
+        bool? isTextPattern,
+        bool? hasLegacyPatternType,
+        string? className,
+        bool? hasEditableChild
+    )
+    {
+        public DebugRecord() : this(null, null, null, null, null, null, null, null) { }
+    }
+#if DEBUG
+    private static DebugRecord? lastDebugRecord = null;
+#endif
+
+    public static bool IsEditable(AutomationElement element)
+    {
+        var (r, debugRecord) = _IsEditable(element);
+#if DEBUG
+        if (lastDebugRecord != debugRecord)
+        {
+            lastDebugRecord = debugRecord;
+            log($"DebugRecord: {debugRecord}");
+        }
+#endif
+        return r;
+    }
+    private static (bool, DebugRecord) _IsEditable(AutomationElement element)
+    {
+        DebugRecord debugRecord = new DebugRecord();
+        if (element == null)
+            return (false, debugRecord);
+
+        var ct = element.Current.ControlType;
+#if DEBUG
+        debugRecord.controlType = ct.LocalizedControlType;
+#endif
+        if (ct == ControlType.Edit || ct == ControlType.Document)
+            return (true, debugRecord);
+
+        if (element.TryGetCurrentPattern(ValuePattern.Pattern, out var valuePatternObj))
+        {
+#if DEBUG
+            debugRecord.isValuePattern = true;
+#endif
+            var valuePattern = (ValuePattern)valuePatternObj;
+            if (!valuePattern.Current.IsReadOnly)
+                return (true, debugRecord);
+        }
+#if DEBUG
+        debugRecord.isValuePattern = false;
+#endif
+
+        if (element.TryGetCurrentPattern(TextPattern.Pattern, out _))
+        {
+#if DEBUG
+            debugRecord.isTextPattern = true;
+#endif
+            return (true, debugRecord);
+        }
+
+#if DEBUG
+        debugRecord.isTextPattern = false;
+#endif
+        var className = element.Current.ClassName;
+#if DEBUG
+        debugRecord.className = className;
+#endif
+        if (!string.IsNullOrEmpty(className) &&
+            (className.Contains("Edit", StringComparison.OrdinalIgnoreCase) ||
+             className.Contains("TextArea", StringComparison.OrdinalIgnoreCase)))
+            return (true, debugRecord);
+
+        var child = element.FindFirst(TreeScope.Children, new PropertyCondition(AutomationElement.ControlTypeProperty, ControlType.Edit));
+#if DEBUG
+        debugRecord.hasEditableChild = child != null;
+#endif
+        if (child != null)
+            return (true, debugRecord);
+
+        return (false, debugRecord);
     }
 
     public void Show(ToastForm indicator, IME ime, nint windowHandler)
@@ -208,31 +298,49 @@ class App
         private IME lastIME = new IME(0);
         private nint lastWindow = IntPtr.Zero;
         private Screen lastScreen = Screen.PrimaryScreen!;
+
         IME GetCurrentIME()
         {
             var h = GetForegroundWindow();
             var tid = GetWindowThreadProcessId(h, out _);
             var hkl = GetKeyboardLayout(tid);
-            ushort langID = (ushort)((ulong)hkl & 0xFFFF);
-            return new IME(langID);
+            ushort LangID = (ushort)((ulong)hkl & 0xFFFF);
+            return new IME(LangID);
         }
 
         private nint GetForegroundInputWindow()
         {
-            var hWnd = GetForegroundWindow();
+            var el = AutomationElement.FocusedElement;
+            var hWnd = new nint(el.Current.NativeWindowHandle);
+            if (hWnd == IntPtr.Zero)
+            {
+                hWnd = GetDesktopWindow();
+                if (LogLevel >= 3)
+                {
+                    log($"No focused element window, falling back to desktop window: {hWnd}");
+                }
+            }
             if (lastWindow == IntPtr.Zero)
             {
+                if (LogLevel >= 2)
+                {
+                    log($"Initial focused element window handle: {hWnd}");
+                }
                 return hWnd;
             }
-            var el = AutomationElement.FromHandle(hWnd);
             if (el != null)
             {
-                var ct = el.Current.ControlType;
-                bool editable = ct == ControlType.Edit || ct == ControlType.Document
-                                || el.TryGetCurrentPattern(ValuePattern.Pattern, out _)
-                                || el.TryGetCurrentPattern(TextPattern.Pattern, out _);
-                if (editable)
+                bool isEditable = IsEditable(el);
+                if (LogLevel >= 3)
                 {
+                    log($"Foreground window handle: {hWnd}, Editable: {isEditable}");
+                }
+                if (isEditable)
+                {
+                    if (LogLevel >= 2)
+                    {
+                        log($"Focused element is editable, using window handle: {hWnd}");
+                    }
                     return hWnd;
                 }
             }
@@ -258,17 +366,15 @@ class App
             lastTime = DateTime.Now;
         }
 
-        protected void logDebug(string msg)
-        {
-            Console.Error.WriteLine($"[DEBUG: Listener] {msg}");
-        }
-
         public void Start()
         {
             forceUpdateIME();
             forceUpdateWindow();
             forceUpdateTime();
-            logDebug($"Initial IME: {lastIME.Name}, Window: {lastWindow}, Screen: {lastScreen.DeviceName}, Time: {lastTime}");
+            if (LogLevel >= 3)
+            {
+                log($"Initial IME: {lastIME.LangID}, Window: {lastWindow}, Screen: {lastScreen.DeviceName}, Time: {lastTime}");
+            }
             FirstRun?.Invoke(lastIME, lastWindow);
             timer.Start();
         }
@@ -279,8 +385,12 @@ class App
             {
                 lastScreen = GetScreenFromWindowHandle(lastWindow);
             }
-            catch
+            catch (Exception ex)
             {
+                if (LogLevel >= 1)
+                {
+                    log($"ERROR: Failed to get screen from window handle {lastWindow}: {ex}");
+                }
                 lastScreen = Screen.PrimaryScreen!;
             }
         }
@@ -290,13 +400,19 @@ class App
             timer.Tick += (_, __) =>
             {
                 var h = GetCurrentIME();
-                logDebug($"Checked IME: {h.Name}, Last IME: {lastIME.Name}");
+                if (LogLevel >= 3)
+                {
+                    log($"Checked IME: {h.LangID}, Last IME: {lastIME.LangID}");
+                }
                 if (h != lastIME)
                 {
                     lastIME = h;
                     forceUpdateTime();
                     forceUpdateWindow();
-                    logDebug($"IME changed to: {lastIME.Name}, Window: {lastWindow}, Screen: {lastScreen.DeviceName}, Time: {lastTime}");
+                    if (LogLevel >= 2)
+                    {
+                        log($"IME changed to: {lastIME.LangID}, Window: {lastWindow}, Screen: {lastScreen.DeviceName}, Time: {lastTime}");
+                    }
                     OnInputLangChange?.Invoke(lastIME, lastWindow);
                 }
             };
@@ -304,15 +420,29 @@ class App
             {
                 var h = GetForegroundInputWindow();
                 var now = DateTime.Now;
-                logDebug($"Checked Window: {h}, Last Window: {lastWindow}");
-                logDebug($"Time since last change: {(now - lastTime).TotalSeconds} seconds");
-                logDebug($"Current Screen: {GetScreenFromWindowHandle(h).DeviceName}, Last Screen: {lastScreen.DeviceName}");
+                if (LogLevel >= 3)
+                {
+                    log($"Checked Window: {h}, Last Window: {lastWindow}");
+                    log($"Time since last change: {(now - lastTime).TotalSeconds} seconds");
+                    log($"Current Screen: {GetScreenFromWindowHandle(h).DeviceName}, Last Screen: {lastScreen.DeviceName}");
+                }
+                if (LogLevel >= 2)
+                {
+                    if (h != lastWindow)
+                    {
+                        log($"Last screen: {lastScreen.DeviceName}, New screen: {GetScreenFromWindowHandle(h).DeviceName}");
+                    }
+                }
                 if (h != lastWindow && ((now - lastTime).TotalSeconds >= 300 || GetScreenFromWindowHandle(h) != lastScreen))
                 {
                     lastWindow = h;
+                    forceUpdateScreen();
                     forceUpdateTime();
                     forceUpdateIME();
-                    logDebug($"Window changed to: {lastWindow}, IME: {lastIME.Name}, Screen: {lastScreen.DeviceName}, Time: {lastTime}");
+                    if (LogLevel >= 2)
+                    {
+                        log($"Window changed to: {lastWindow}, IME: {lastIME.LangID}, Screen: {lastScreen.DeviceName}, Time: {lastTime}");
+                    }
                     OnFocusChanged?.Invoke(lastIME, lastWindow);
                 }
             };
