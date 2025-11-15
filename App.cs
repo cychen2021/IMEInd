@@ -522,9 +522,6 @@ class App
         {
             timer.Tick += (_, __) =>
             {
-            };
-            timer.Tick += (_, __) =>
-            {
                 var currentIME = GetCurrentIME();
                 if (LogLevel >= 3)
                 {
