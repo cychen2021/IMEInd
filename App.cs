@@ -86,8 +86,11 @@ class App
     [DllImport("user32.dll")] static extern IntPtr GetForegroundWindow();
     [DllImport("user32.dll")] static extern uint GetWindowThreadProcessId(IntPtr hWnd, out uint lpdwProcessId);
     [DllImport("user32.dll")] static extern IntPtr GetKeyboardLayout(uint idThread);
+#if DEBUG
+    [DllImport("kernel32.dll")] static extern bool AllocConsole();
+#endif
 
-    record IME(int LangID)
+    public record IME(int LangID)
     {
         public string Name => LangID switch
         {
@@ -100,39 +103,43 @@ class App
         };
     }
 
-    private DateTime lastToastTime = DateTime.MinValue;
-    private IME? lastIME = null;
-    private nint lastWindow = IntPtr.Zero;
+    private Listener listener = new Listener();
 
-    IME GetCurrent()
+    public static Screen GetScreenFromWindowHandle(nint windowHandler)
     {
-        var h = GetForegroundWindow();
-        var tid = GetWindowThreadProcessId(h, out _);
-        var hkl = GetKeyboardLayout(tid);
-        ushort langID = (ushort)((ulong)hkl & 0xFFFF);
-        lastIME = new IME(langID);
-        lastToastTime = DateTime.Now;
-        lastWindow = h;
-        return lastIME;
+        try
+        {
+            return Screen.FromHandle(windowHandler);
+        }
+        catch (Exception ex)
+        {
+            Console.Error.WriteLine($"[ERROR] Failed to get screen for window handle {windowHandler}: {ex}");
+            // Fallback to primary screen if anything goes wrong
+            return Screen.PrimaryScreen!;
+        }
     }
 
-    public bool Show(ToastForm indicator)
+    public void Show(ToastForm indicator, IME ime, nint windowHandler)
     {
-        var previousIME = lastIME;
-        var previousTime = lastToastTime;
-        var previousWindow = lastWindow;
-        var currentIME = GetCurrent();
-        if (DateTime.Now.Subtract(previousTime).TotalMinutes > 5 || previousIME != currentIME || previousWindow != lastWindow)
-        {
-            indicator.ShowToast($"{currentIME.Name}");
-            return true;
-        }
-        return false;
+        Screen screen = GetScreenFromWindowHandle(windowHandler);
+        var centerX = screen.Bounds.X + screen.Bounds.Width / 2;
+        var y = screen.Bounds.Y + screen.Bounds.Height - 100 - indicator.Height;
+        var nearPoint = new Point(centerX, Math.Max(screen.Bounds.Y, y));
+        indicator.ShowToast($"{ime.Name}", nearPoint);
     }
 
     [STAThread]
     public void Run()
     {
+#if DEBUG
+        try
+        {
+            AllocConsole();
+            Console.WriteLine("[DEBUG] Console allocated. IMEInd starting...");
+        }
+        catch { /* If console allocation fails, continue silently. */ }
+#endif
+
         ApplicationConfiguration.Initialize();
         var indicator = new ToastForm();
 
@@ -172,11 +179,21 @@ class App
         contextMenu.Items.Add(exitMenuItem);
         trayIcon.ContextMenuStrip = contextMenu;
 
-        Automation.AddAutomationFocusChangedEventHandler(OnFocusChanged);
-        SystemEventsWrapper.OnInputLangChange += () =>
+        listener.OnInputLangChange += (ime, windowHandler) =>
         {
-            Show(indicator);
+            Show(indicator, ime, windowHandler);
         };
+
+        listener.OnFocusChanged += (ime, windowHandler) =>
+        {
+            Show(indicator, ime, windowHandler);
+        };
+        listener.FirstRun += (ime, windowHandler) =>
+        {
+            Show(indicator, ime, windowHandler);
+        };
+
+        listener.Start();
 
         Application.Run(new ApplicationContext());
 
@@ -184,48 +201,130 @@ class App
         Automation.RemoveAllEventHandlers();
         trayIcon.Dispose();
 
-        void OnFocusChanged(object? sender, AutomationFocusChangedEventArgs e)
+    }
+    public class Listener
+    {
+        private DateTime lastTime = DateTime.MinValue;
+        private IME lastIME = new IME(0);
+        private nint lastWindow = IntPtr.Zero;
+        private Screen lastScreen = Screen.PrimaryScreen!;
+        IME GetCurrentIME()
         {
-            try
-            {
-                var el = AutomationElement.FocusedElement;
-                if (el is null) return;
+            var h = GetForegroundWindow();
+            var tid = GetWindowThreadProcessId(h, out _);
+            var hkl = GetKeyboardLayout(tid);
+            ushort langID = (ushort)((ulong)hkl & 0xFFFF);
+            return new IME(langID);
+        }
 
+        private nint GetForegroundInputWindow()
+        {
+            var hWnd = GetForegroundWindow();
+            if (lastWindow == IntPtr.Zero)
+            {
+                return hWnd;
+            }
+            var el = AutomationElement.FromHandle(hWnd);
+            if (el != null)
+            {
                 var ct = el.Current.ControlType;
                 bool editable = ct == ControlType.Edit || ct == ControlType.Document
                                 || el.TryGetCurrentPattern(ValuePattern.Pattern, out _)
                                 || el.TryGetCurrentPattern(TextPattern.Pattern, out _);
-
-                if (!editable) return;
-
-                Show(indicator);
+                if (editable)
+                {
+                    return hWnd;
+                }
             }
-            catch { /* swallow */ }
+            return lastWindow;
         }
-    }
-}
 
-public static class SystemEventsWrapper
-{
-    // Simple: poll HKL changes (120 ms); trigger callback on change (responsive enough)
-    static SystemEventsWrapper()
-    {
-        var t = new System.Windows.Forms.Timer { Interval = 120 };
-        IntPtr last = IntPtr.Zero;
-        t.Tick += (_, __) =>
+
+        private System.Windows.Forms.Timer timer = new System.Windows.Forms.Timer { Interval = 120 };
+        private void forceUpdateIME()
         {
-            var h = GetKeyboardLayout(GetCurrentThreadId());
-            if (h != last)
+            lastIME = GetCurrentIME();
+        }
+
+        private void forceUpdateWindow()
+        {
+            var h = GetForegroundInputWindow();
+            lastWindow = h;
+            forceUpdateScreen();
+        }
+
+        private void forceUpdateTime()
+        {
+            lastTime = DateTime.Now;
+        }
+
+        protected void logDebug(string msg)
+        {
+            Console.Error.WriteLine($"[DEBUG: Listener] {msg}");
+        }
+
+        public void Start()
+        {
+            forceUpdateIME();
+            forceUpdateWindow();
+            forceUpdateTime();
+            logDebug($"Initial IME: {lastIME.Name}, Window: {lastWindow}, Screen: {lastScreen.DeviceName}, Time: {lastTime}");
+            FirstRun?.Invoke(lastIME, lastWindow);
+            timer.Start();
+        }
+
+        private void forceUpdateScreen()
+        {
+            try
             {
-                last = h;
-                OnInputLangChange?.Invoke();
+                lastScreen = GetScreenFromWindowHandle(lastWindow);
             }
-        };
-        t.Start();
+            catch
+            {
+                lastScreen = Screen.PrimaryScreen!;
+            }
+        }
+
+        public Listener()
+        {
+            timer.Tick += (_, __) =>
+            {
+                var h = GetCurrentIME();
+                logDebug($"Checked IME: {h.Name}, Last IME: {lastIME.Name}");
+                if (h != lastIME)
+                {
+                    lastIME = h;
+                    forceUpdateTime();
+                    forceUpdateWindow();
+                    logDebug($"IME changed to: {lastIME.Name}, Window: {lastWindow}, Screen: {lastScreen.DeviceName}, Time: {lastTime}");
+                    OnInputLangChange?.Invoke(lastIME, lastWindow);
+                }
+            };
+            timer.Tick += (_, __) =>
+            {
+                var h = GetForegroundInputWindow();
+                var now = DateTime.Now;
+                logDebug($"Checked Window: {h}, Last Window: {lastWindow}");
+                logDebug($"Time since last change: {(now - lastTime).TotalSeconds} seconds");
+                logDebug($"Current Screen: {GetScreenFromWindowHandle(h).DeviceName}, Last Screen: {lastScreen.DeviceName}");
+                if (h != lastWindow && ((now - lastTime).TotalSeconds >= 300 || GetScreenFromWindowHandle(h) != lastScreen))
+                {
+                    lastWindow = h;
+                    forceUpdateTime();
+                    forceUpdateIME();
+                    logDebug($"Window changed to: {lastWindow}, IME: {lastIME.Name}, Screen: {lastScreen.DeviceName}, Time: {lastTime}");
+                    OnFocusChanged?.Invoke(lastIME, lastWindow);
+                }
+            };
+        }
+
+        public delegate void Action(IME ime, nint hwnd);
+
+        public event Action? OnInputLangChange;
+        public event Action? OnFocusChanged;
+        public event Action? FirstRun;
+
+        [DllImport("user32.dll")] static extern IntPtr GetKeyboardLayout(uint idThread);
+        [DllImport("kernel32.dll")] static extern uint GetCurrentThreadId();
     }
-
-    public static event Action? OnInputLangChange;
-
-    [DllImport("user32.dll")] static extern IntPtr GetKeyboardLayout(uint idThread);
-    [DllImport("kernel32.dll")] static extern uint GetCurrentThreadId();
 }
