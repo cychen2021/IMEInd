@@ -55,12 +55,26 @@ sealed class ToastForm : Form
     }
     public void ShowToast(string text, Point? near = null)
     {
+        // Ensure UI updates happen on the UI thread
+        if (InvokeRequired)
+        {
+            BeginInvoke(new Action(() => ShowToast(text, near)));
+            return;
+        }
+
         _label.Text = text;
+        // Ensure layout reflects new text/icon sizes before positioning
+        PerformLayout();
+        // Reposition label in case icon width changed
+        _label.Location = new Point(_icon.Width, 0);
+
         Opacity = 0.95;
         Location = near.HasValue
             ? new Point(Math.Max(0, near.Value.X - Width / 2), Math.Max(0, near.Value.Y))
             : new Point(Screen.PrimaryScreen!.Bounds.Width / 2 - Width / 2, Screen.PrimaryScreen!.Bounds.Height - Height - 100);
+
         Show();
+        // Restart timer on UI thread so Tick will fire correctly
         _timer.Stop();
         _timer.Start();
     }
