@@ -178,62 +178,69 @@ class App
         DebugRecord debugRecord = new DebugRecord();
         if (element == null)
             return (false, debugRecord);
-        ControlType ct;
         try
         {
-            ct = element.Current.ControlType;
-        }
-        catch
-        {
+            ControlType ct = element.Current.ControlType;
+#if DEBUG
+            debugRecord.controlType = ct.LocalizedControlType;
+#endif
+            if (ct == ControlType.Edit || ct == ControlType.Document)
+                return (true, debugRecord);
+
+            if (element.TryGetCurrentPattern(ValuePattern.Pattern, out var valuePatternObj))
+            {
+#if DEBUG
+                debugRecord.isValuePattern = true;
+#endif
+                var valuePattern = (ValuePattern)valuePatternObj;
+                if (!valuePattern.Current.IsReadOnly)
+                    return (true, debugRecord);
+            }
+#if DEBUG
+            debugRecord.isValuePattern = false;
+#endif
+
+            if (element.TryGetCurrentPattern(TextPattern.Pattern, out _))
+            {
+#if DEBUG
+                debugRecord.isTextPattern = true;
+#endif
+                return (true, debugRecord);
+            }
+#if DEBUG
+            debugRecord.isTextPattern = false;
+#endif
+
+            var className = element.Current.ClassName;
+#if DEBUG
+            debugRecord.className = className;
+#endif
+            if (!string.IsNullOrEmpty(className) &&
+                (className.Contains("Edit", StringComparison.OrdinalIgnoreCase) ||
+                 className.Contains("TextArea", StringComparison.OrdinalIgnoreCase)))
+                return (true, debugRecord);
+
+            // FindFirst can throw ElementNotAvailableException if the element becomes stale
+            var child = element.FindFirst(TreeScope.Children, new PropertyCondition(AutomationElement.ControlTypeProperty, ControlType.Edit));
+#if DEBUG
+            debugRecord.hasEditableChild = child != null;
+#endif
+            if (child != null)
+                return (true, debugRecord);
+
             return (false, debugRecord);
         }
-#if DEBUG
-        debugRecord.controlType = ct.LocalizedControlType;
-#endif
-        if (ct == ControlType.Edit || ct == ControlType.Document)
-            return (true, debugRecord);
-
-        if (element.TryGetCurrentPattern(ValuePattern.Pattern, out var valuePatternObj))
+        catch (ElementNotAvailableException)
         {
-#if DEBUG
-            debugRecord.isValuePattern = true;
-#endif
-            var valuePattern = (ValuePattern)valuePatternObj;
-            if (!valuePattern.Current.IsReadOnly)
-                return (true, debugRecord);
+            // The automation element is no longer available (window closed or control destroyed).
+            // Treat as non-editable and continue.
+            return (false, debugRecord);
         }
-#if DEBUG
-        debugRecord.isValuePattern = false;
-#endif
-
-        if (element.TryGetCurrentPattern(TextPattern.Pattern, out _))
+        catch (Exception)
         {
-#if DEBUG
-            debugRecord.isTextPattern = true;
-#endif
-            return (true, debugRecord);
+            // Any other automation errors should fail gracefully and be considered non-editable.
+            return (false, debugRecord);
         }
-
-#if DEBUG
-        debugRecord.isTextPattern = false;
-#endif
-        var className = element.Current.ClassName;
-#if DEBUG
-        debugRecord.className = className;
-#endif
-        if (!string.IsNullOrEmpty(className) &&
-            (className.Contains("Edit", StringComparison.OrdinalIgnoreCase) ||
-             className.Contains("TextArea", StringComparison.OrdinalIgnoreCase)))
-            return (true, debugRecord);
-
-        var child = element.FindFirst(TreeScope.Children, new PropertyCondition(AutomationElement.ControlTypeProperty, ControlType.Edit));
-#if DEBUG
-        debugRecord.hasEditableChild = child != null;
-#endif
-        if (child != null)
-            return (true, debugRecord);
-
-        return (false, debugRecord);
     }
 
     public void Show(ToastForm indicator, IME ime, Screen screen)
