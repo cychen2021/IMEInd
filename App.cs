@@ -9,26 +9,48 @@ namespace IMEInd;
 sealed class ToastForm : Form
 {
     readonly Label _label;
+    readonly Label _icon;
     readonly System.Windows.Forms.Timer _timer;
+
+
     public ToastForm()
     {
         FormBorderStyle = FormBorderStyle.None;
         ShowInTaskbar = false;
         TopMost = true;
         StartPosition = FormStartPosition.Manual;
-        BackColor = Color.FromArgb(34, 34, 34);
+        var height = 80;
+        _icon = new Label
+        {
+            Text = "\uF2B7",
+            AutoSize = true,
+            Font = new Font("Segoe Fluent Icons", 20),
+            ForeColor = Color.White,
+            BackColor = Color.Black,
+            TextAlign = ContentAlignment.MiddleCenter,
+            Location = new Point(0, 0),
+            MaximumSize = new Size(int.MaxValue, height),
+            MinimumSize = new Size(0, height),
+        };
+        Controls.Add(_icon);
         _label = new Label
         {
             ForeColor = Color.White,
-            AutoSize = false,
-            Width = 300,
-            Height = 30,
+            BackColor = Color.Black,
+            AutoSize = true,
             TextAlign = ContentAlignment.MiddleCenter,
-            Font = new Font("Segoe UI", 10, FontStyle.Bold)
+            Font = new Font("Segoe UI", 20, FontStyle.Bold),
+            Location = new Point(_icon.Width, 0),
+            MaximumSize = new Size(int.MaxValue, height),
+            MinimumSize = new Size(0, height),
         };
         Controls.Add(_label);
-        Size = _label.Size;
-        _timer = new System.Windows.Forms.Timer { Interval = 800 };
+
+        AutoSize = true;
+        AutoSizeMode = AutoSizeMode.GrowAndShrink;
+        BackColor = Color.Black;
+        Opacity = 0.5;
+        _timer = new System.Windows.Forms.Timer { Interval = 5000 };
         _timer.Tick += (_, __) => Hide();
     }
     public void ShowToast(string text, Point? near = null)
@@ -37,7 +59,7 @@ sealed class ToastForm : Form
         Opacity = 0.95;
         Location = near.HasValue
             ? new Point(Math.Max(0, near.Value.X - Width / 2), Math.Max(0, near.Value.Y))
-            : new Point(Screen.PrimaryScreen!.Bounds.Width / 2 - Width / 2, 20);
+            : new Point(Screen.PrimaryScreen!.Bounds.Width / 2 - Width / 2, Screen.PrimaryScreen!.Bounds.Height - Height - 100);
         Show();
         _timer.Stop();
         _timer.Start();
@@ -55,11 +77,11 @@ class App
     {
         public string Name => LangID switch
         {
-            0x0409 => "en-US",
-            0x0804 => "zh-CN",
-            0x0404 => "zh-TW",
-            0x0411 => "ja",
-            0x0412 => "ko",
+            0x0409 => "English",
+            0x0804 => "简体中文",
+            0x0404 => "繁體中文",
+            0x0411 => "日本語",
+            0x0412 => "한국어",
             _ => $"0x{LangID:X4}"
         };
     }
@@ -85,7 +107,7 @@ class App
         var currentIME = GetCurrent();
         if (DateTime.Now.Subtract(previousTime).TotalMinutes > 5 || previousIME != currentIME)
         {
-            indicator.ShowToast($"IME: {currentIME.Name}");
+            indicator.ShowToast($"{currentIME.Name}");
             return true;
         }
         return false;
