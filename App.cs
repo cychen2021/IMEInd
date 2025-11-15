@@ -308,6 +308,10 @@ class App
         {
             Show(indicator, ime, screen);
         };
+        listener.OnLongTimeElapsed += (ime, screen) =>
+        {
+            Show(indicator, ime, screen);
+        };
 
         listener.Start();
 
@@ -509,43 +513,32 @@ class App
         {
             timer.Tick += (_, __) =>
             {
-                var h = GetCurrentIME();
-                if (LogLevel >= 3)
-                {
-                    log($"Checked IME: {h.LangID}, Last IME: {lastIME.LangID}");
-                }
-                if (h != lastIME)
-                {
-                    lastIME = h;
-                    forceUpdateTime();
-                    forceUpdateWindow();
-                    if (LogLevel >= 2)
-                    {
-                        log($"IME changed to: {lastIME.LangID}, Window: {lastWindow}, Screen: {lastScreen.DeviceName}, Time: {lastTime}");
-                    }
-                    OnInputLangChange?.Invoke(lastIME, lastScreen);
-                }
             };
             timer.Tick += (_, __) =>
             {
-                var h = GetForegroundInputWindow();
+                var currentIME = GetCurrentIME();
+                if (LogLevel >= 3)
+                {
+                    log($"Checked IME: {currentIME.LangID}, Last IME: {lastIME.LangID}");
+                }
+                var currentWindow = GetForegroundInputWindow();
                 var now = DateTime.Now;
                 if (LogLevel >= 3)
                 {
-                    log($"Checked Window: {h}, Last Window: {lastWindow}");
+                    log($"Checked Window: {currentWindow}, Last Window: {lastWindow}");
                     log($"Time since last change: {(now - lastTime).TotalSeconds} seconds");
-                    log($"Current Screen: {GetScreenFromWindowHandle(h).DeviceName}, Last Screen: {lastScreen.DeviceName}");
+                    log($"Current Screen: {GetScreenFromWindowHandle(currentWindow).DeviceName}, Last Screen: {lastScreen.DeviceName}");
                 }
                 if (LogLevel >= 2)
                 {
-                    if (h != lastWindow)
+                    if (currentWindow != lastWindow)
                     {
-                        log($"Last screen: {lastScreen.DeviceName}, New screen: {GetScreenFromWindowHandle(h).DeviceName}, Time since last change: {(now - lastTime).TotalSeconds} seconds");
+                        log($"Last screen: {lastScreen.DeviceName}, New screen: {GetScreenFromWindowHandle(currentWindow).DeviceName}, Time since last change: {(now - lastTime).TotalSeconds} seconds");
                     }
                 }
-                if (h != lastWindow && ((now - lastTime).TotalSeconds >= 300 || GetScreenFromWindowHandle(h).DeviceName != lastScreen.DeviceName))
+                if (currentWindow != lastWindow && ((now - lastTime).TotalSeconds >= 300 || GetScreenFromWindowHandle(currentWindow).DeviceName != lastScreen.DeviceName))
                 {
-                    lastWindow = h;
+                    lastWindow = currentWindow;
                     forceUpdateTime();
                     forceUpdateIME();
                     forceUpdateScreen();
@@ -555,6 +548,28 @@ class App
                     }
                     OnFocusChanged?.Invoke(lastIME, lastScreen);
                 }
+                else if (currentIME != lastIME)
+                {
+                    lastIME = currentIME;
+                    forceUpdateTime();
+                    forceUpdateWindow();
+                    if (LogLevel >= 2)
+                    {
+                        log($"IME changed to: {lastIME.LangID}, Window: {lastWindow}, Screen: {lastScreen.DeviceName}, Time: {lastTime}");
+                    }
+                    OnInputLangChange?.Invoke(lastIME, lastScreen);
+                }
+                else if ((now - lastTime).TotalMinutes >= 60)
+                {
+                    lastTime = now;
+                    forceUpdateIME();
+                    forceUpdateWindow();
+                    if (LogLevel >= 2)
+                    {
+                        log($"Long time elapsed with no changes. IME: {lastIME.LangID}, Window: {lastWindow}, Screen: {lastScreen.DeviceName}, Time: {lastTime}");
+                    }
+                    OnLongTimeElapsed?.Invoke(lastIME, lastScreen);
+                }
             };
         }
 
@@ -563,6 +578,7 @@ class App
         public event Action? OnInputLangChange;
         public event Action? OnFocusChanged;
         public event Action? FirstRun;
+        public event Action? OnLongTimeElapsed;
 
         [DllImport("user32.dll")] static extern IntPtr GetKeyboardLayout(uint idThread);
         [DllImport("kernel32.dll")] static extern uint GetCurrentThreadId();
