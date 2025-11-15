@@ -298,6 +298,10 @@ class App
         private IME lastIME = new IME(0);
         private nint lastWindow = IntPtr.Zero;
         private Screen lastScreen = Screen.PrimaryScreen!;
+        // For ancestor retrieval
+        private const uint GA_ROOT = 2;
+
+        [DllImport("user32.dll")] static extern IntPtr GetAncestor(IntPtr hWnd, uint gaFlags);
 
         IME GetCurrentIME()
         {
@@ -308,42 +312,122 @@ class App
             return new IME(LangID);
         }
 
+        private static bool IsWebView2HostClass(string? className) =>
+            !string.IsNullOrEmpty(className) && (
+                className.Contains("Chrome_WidgetWin", StringComparison.OrdinalIgnoreCase) ||
+                className.Contains("WebView", StringComparison.OrdinalIgnoreCase) ||
+                className.Contains("CefBrowserWindow", StringComparison.OrdinalIgnoreCase));
+
+        private static IntPtr GetTopLevel(IntPtr h)
+        {
+            if (h == IntPtr.Zero) return IntPtr.Zero;
+            try
+            {
+                var top = GetAncestor(h, GA_ROOT);
+                return top != IntPtr.Zero ? top : h;
+            }
+            catch
+            {
+                return h;
+            }
+        }
+
+        // Normalizes a raw UIA handle to a real top-level window; falls back to process MainWindow or foreground window.
+        private nint GetRealWindow(nint rawHandle, AutomationElement? el)
+        {
+            IntPtr candidate = rawHandle;
+            string? className = null;
+            int? processId = null;
+            if (el != null)
+            {
+                try
+                {
+                    className = el.Current.ClassName;
+                    processId = el.Current.ProcessId;
+                }
+                catch { }
+            }
+
+            // Normalize to top-level ancestor if possible.
+            candidate = GetTopLevel(candidate);
+
+            // If the class name looks like an embedded browser surface, prefer foreground top-level window.
+            if (candidate == IntPtr.Zero || IsWebView2HostClass(className))
+            {
+                var fg = GetForegroundWindow();
+                if (fg != IntPtr.Zero) candidate = fg;
+            }
+
+            // Process-based fallback: sometimes MainWindowHandle differs from the raw content handle.
+            if (candidate == IntPtr.Zero && processId.HasValue)
+            {
+                try
+                {
+                    var proc = Process.GetProcessById(processId.Value);
+                    if (proc.MainWindowHandle != IntPtr.Zero)
+                    {
+                        candidate = proc.MainWindowHandle;
+                    }
+                }
+                catch { }
+            }
+
+            // Final fallback to desktop window.
+            if (candidate == IntPtr.Zero)
+            {
+                candidate = GetDesktopWindow();
+            }
+            return candidate;
+        }
+
         private nint GetForegroundInputWindow()
         {
             var el = AutomationElement.FocusedElement;
-            var hWnd = new nint(el.Current.NativeWindowHandle);
-            if (hWnd == IntPtr.Zero)
+            IntPtr rawHandle = IntPtr.Zero;
+            if (el != null)
             {
-                hWnd = GetDesktopWindow();
-                if (LogLevel >= 3)
+                try
                 {
-                    log($"No focused element window, falling back to desktop window: {hWnd}");
+                    rawHandle = new IntPtr(el.Current.NativeWindowHandle);
                 }
+                catch { rawHandle = IntPtr.Zero; }
             }
+
+            var candidate = GetRealWindow(rawHandle, el);
+
             if (lastWindow == IntPtr.Zero)
             {
                 if (LogLevel >= 2)
                 {
-                    log($"Initial focused element window handle: {hWnd}");
+                    log($"Initial resolved window handle: {candidate}");
                 }
-                return hWnd;
+                return candidate;
             }
-            if (el != null)
+
+            bool editable = el != null && IsEditable(el);
+            if (LogLevel >= 3)
             {
-                bool isEditable = IsEditable(el);
+                log($"Raw handle: {rawHandle}, Resolved handle: {candidate}, Editable: {editable}");
+            }
+            if (editable && candidate != IntPtr.Zero)
+            {
                 if (LogLevel >= 3)
                 {
-                    log($"Foreground window handle: {hWnd}, Editable: {isEditable}");
+                    log($"Focused element editable; using resolved handle: {candidate}");
                 }
-                if (isEditable)
-                {
-                    if (LogLevel >= 2)
-                    {
-                        log($"Focused element is editable, using window handle: {hWnd}");
-                    }
-                    return hWnd;
-                }
+                return candidate;
             }
+
+            // If candidate differs from lastWindow, prefer the fresh candidate even if not editable to avoid staleness.
+            if (candidate != IntPtr.Zero && candidate != lastWindow)
+            {
+                if (LogLevel >= 2)
+                {
+                    log($"Non-editable focus; updating window to new handle: {candidate}");
+                }
+                return candidate;
+            }
+
             return lastWindow;
         }
 
