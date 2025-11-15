@@ -9,6 +9,7 @@ sealed class ToastForm : Form
     readonly Label _label;
     readonly Label _icon;
     readonly System.Windows.Forms.Timer _timer;
+    readonly FlowLayoutPanel _panel;
 
 
     public ToastForm()
@@ -18,36 +19,52 @@ sealed class ToastForm : Form
         TopMost = true;
         StartPosition = FormStartPosition.Manual;
         var height = 80;
+        var opacity = 1.0;
+        int alpha = (int)(opacity * 255);
+        var baseColor = ColorTranslator.FromHtml("#122738");
+        var backColor = Color.FromArgb(alpha, baseColor);
         _icon = new Label
         {
             Text = "\uF2B7",
             AutoSize = true,
             Font = new Font("Segoe Fluent Icons", 20),
             ForeColor = Color.White,
-            BackColor = Color.Black,
+            BackColor = backColor,
             TextAlign = ContentAlignment.MiddleCenter,
-            Location = new Point(0, 0),
             MaximumSize = new Size(int.MaxValue, height),
             MinimumSize = new Size(0, height),
         };
-        Controls.Add(_icon);
         _label = new Label
         {
             ForeColor = Color.White,
-            BackColor = Color.Black,
+            BackColor = backColor,
             AutoSize = true,
             TextAlign = ContentAlignment.MiddleCenter,
             Font = new Font("Segoe UI", 20, FontStyle.Bold),
-            Location = new Point(_icon.Width, 0),
             MaximumSize = new Size(int.MaxValue, height),
             MinimumSize = new Size(0, height),
         };
-        Controls.Add(_label);
+        // XXX: I don't know why Point(2, 2), and Rectangle(2,2,Width -4, Height -4) but it works
+        _panel = new FlowLayoutPanel
+        {
+            BackColor = backColor,
+            Location = new Point(2, 2),
+            MaximumSize = new Size(int.MaxValue, height),
+            MinimumSize = new Size(0, height),
+            FlowDirection = FlowDirection.LeftToRight,
+            AutoSize = true,
+            WrapContents = false,
+        };
+        _panel.Controls.Add(_icon);
+        _panel.Controls.Add(_label);
+        Controls.Add(_panel);
+        Paint += (_, e) =>
+        {
+            e.Graphics.DrawRectangle(new Pen(ColorTranslator.FromHtml("#ff9d00"), 4), 2, 2, Width - 4, Height - 4);
+        };
 
         AutoSize = true;
         AutoSizeMode = AutoSizeMode.GrowAndShrink;
-        BackColor = Color.Black;
-        Opacity = 0.5;
         _timer = new System.Windows.Forms.Timer { Interval = 5000 };
         _timer.Tick += (_, __) => Hide();
     }
@@ -60,7 +77,7 @@ sealed class ToastForm : Form
             return;
         }
         var centerX = screen.Bounds.X + screen.Bounds.Width / 2;
-        var y = screen.Bounds.Y + screen.Bounds.Height - 100 - Height;
+        var y = screen.Bounds.Y + screen.Bounds.Height - 200 - Height;
         var nearPoint = new Point(centerX, Math.Max(screen.Bounds.Y, y));
 
         _label.Text = text;
