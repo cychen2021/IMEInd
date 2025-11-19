@@ -17,10 +17,18 @@
     <SelfContained>true</SelfContained>
     <PublishReadyToRun>true</PublishReadyToRun>
     <IncludeNativeLibrariesForSelfExtract>true</IncludeNativeLibrariesForSelfExtract>
+    <!-- Use the same icon for the packaged application and the tray icon -->
+    <ApplicationIcon>resources/icon.ico</ApplicationIcon>
+    <Win32Icon>resources/icon.ico</Win32Icon>
   </PropertyGroup>
 
   <ItemGroup>
     <EmbeddedResource Include="resources/icon.ico" />
+    <!-- Ensure the icon is available as content for packaging -->
+    <Content Include="resources/icon.ico">
+      <Pack>True</Pack>
+      <CopyToOutputDirectory>Never</CopyToOutputDirectory>
+    </Content>
   </ItemGroup>
 
 </Project>

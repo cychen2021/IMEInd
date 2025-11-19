@@ -4,6 +4,12 @@ using System.Reflection;
 using System.Diagnostics;
 namespace IMEInd;
 
+public enum ToastStyle
+{
+    Default = 0,
+    StrikeThrough = 1,
+}
+
 sealed class ToastForm : Form
 {
     readonly Label _label;
@@ -62,19 +68,18 @@ sealed class ToastForm : Form
         {
             e.Graphics.DrawRectangle(new Pen(ColorTranslator.FromHtml("#ff9d00"), 4), 2, 2, Width - 4, Height - 4);
         };
-
         AutoSize = true;
         AutoSizeMode = AutoSizeMode.GrowAndShrink;
         TopMost = true;
         _timer = new System.Windows.Forms.Timer { Interval = 5000 };
         _timer.Tick += (_, __) => Hide();
     }
-    public void ShowToast(string text, Screen screen)
+    public void ShowToast(string text, Screen screen, ToastStyle style = ToastStyle.Default)
     {
         // Ensure UI updates happen on the UI thread
         if (InvokeRequired)
         {
-            BeginInvoke(new Action(() => ShowToast(text, screen)));
+            BeginInvoke(new Action(() => ShowToast(text, screen, style)));
             return;
         }
         var centerX = screen.Bounds.X + screen.Bounds.Width / 2;
@@ -82,6 +87,9 @@ sealed class ToastForm : Form
         var nearPoint = new Point(centerX, Math.Max(screen.Bounds.Y, y));
 
         _label.Text = text;
+        // Update font style to allow future style extensions
+        var fontStyle = style == ToastStyle.StrikeThrough ? FontStyle.Bold | FontStyle.Strikeout : FontStyle.Bold;
+        _label.Font = new Font(_label.Font.FontFamily, _label.Font.Size, fontStyle);
         // Ensure layout reflects new text/icon sizes before positioning
         PerformLayout();
         // Reposition label in case icon width changed
@@ -124,7 +132,18 @@ class App
             0x0404 => "繁體中文",
             0x0411 => "日本語",
             0x0412 => "한국어",
-            _ => $"0x{LangID:X4}"
+            _ => $"0x{LangID:X4}",
+        };
+
+        // Whether the language is served by a true IME (e.g., Chinese/Japanese/Korean).
+        // English and most other layouts are not IMEs.
+        public bool IsSupportedIME => LangID switch
+        {
+            0x0804 => true, // 简体中文
+            0x0404 => true, // 繁體中文
+            0x0411 => true, // 日本語
+            0x0412 => true, // 한국어
+            _ => false,
         };
     }
 
@@ -249,7 +268,11 @@ class App
         {
             log($"Showing IME toast: {ime.LangID} on screen {screen.DeviceName}");
         }
-        indicator.ShowToast($"{ime.Name}", screen);
+        // When the lookup indicates the current layout is not a supported IME, display
+        // explicit "Unawailable" with strike-through to inform the user.
+        var text = ime.IsSupportedIME ? ime.Name : "Unawailable";
+        var toastStyle = ime.IsSupportedIME ? ToastStyle.Default : ToastStyle.StrikeThrough;
+        indicator.ShowToast(text, screen, toastStyle);
     }
 
     [STAThread]
@@ -488,7 +511,7 @@ class App
         }
 
 
-        private System.Windows.Forms.Timer timer = new System.Windows.Forms.Timer { Interval = 120 };
+        private System.Windows.Forms.Timer timer = new System.Windows.Forms.Timer { Interval = 500 };
         private void forceUpdateIME()
         {
             lastIME = GetCurrentIME();
