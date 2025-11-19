@@ -140,10 +140,10 @@ class App
         public bool IsSupportedIME => LangID switch
         {
             0x0409 => true, // English
-            0x0804 => true, // 简体中文
-            0x0404 => true, // 繁體中文
-            0x0411 => true, // 日本語
-            0x0412 => true, // 한국어
+            0x0804 => true, // Simplified Chinese
+            0x0404 => true, // Traditional Chinese
+            0x0411 => true, // Japanese
+            0x0412 => true, // Korean
             _ => false,
         };
     }
