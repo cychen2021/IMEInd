@@ -139,6 +139,7 @@ class App
         // English and most other layouts are not IMEs.
         public bool IsSupportedIME => LangID switch
         {
+            0x0409 => true, // English
             0x0804 => true, // 简体中文
             0x0404 => true, // 繁體中文
             0x0411 => true, // 日本語
