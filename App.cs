@@ -288,6 +288,9 @@ class App
         catch { /* If console allocation fails, continue silently. */ }
 #endif
 
+        // Create default configuration file if it doesn't exist
+        Config.CreateDefault();
+
         ApplicationConfiguration.Initialize();
         var indicator = new ToastForm();
 
@@ -360,6 +363,7 @@ class App
         private IME lastIME = new IME(0);
         private nint lastWindow = IntPtr.Zero;
         private Screen lastScreen = Screen.PrimaryScreen!;
+        private readonly Config config;
         // For ancestor retrieval
         private const uint GA_ROOT = 2;
 
@@ -512,7 +516,7 @@ class App
         }
 
 
-        private System.Windows.Forms.Timer timer = new System.Windows.Forms.Timer { Interval = 500 };
+        private System.Windows.Forms.Timer timer;
         private void forceUpdateIME()
         {
             lastIME = GetCurrentIME();
@@ -561,6 +565,8 @@ class App
 
         public Listener()
         {
+            config = Config.Load();
+            timer = new System.Windows.Forms.Timer { Interval = config.TimerIntervalMs };
             timer.Tick += (_, __) =>
             {
                 var currentIME = GetCurrentIME();
@@ -597,7 +603,7 @@ class App
                         log($"Last screen: {lastScreen.DeviceName}, New screen: {GetScreenFromWindowHandle(currentWindow).DeviceName}, Time since last change: {(now - lastTime).TotalSeconds} seconds");
                     }
                 }
-                if (currentWindow != lastWindow && ((now - lastTime).TotalSeconds >= 300 || GetScreenFromWindowHandle(currentWindow).DeviceName != lastScreen.DeviceName))
+                if (currentWindow != lastWindow && ((now - lastTime).TotalSeconds >= config.WindowChangeThresholdSeconds || GetScreenFromWindowHandle(currentWindow).DeviceName != lastScreen.DeviceName))
                 {
                     lastWindow = currentWindow;
                     forceUpdateTime();
@@ -613,7 +619,7 @@ class App
             timer.Tick += (_, __) =>
             {
                 var now = DateTime.Now;
-                if ((now - lastTime).TotalMinutes >= 60)
+                if ((now - lastTime).TotalMinutes >= config.LongTimeElapsedMinutes)
                 {
                     lastTime = now;
                     forceUpdateIME();
