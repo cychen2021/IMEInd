@@ -1,0 +1,3 @@
+# TODOs
+
+- [ ] Make logging configurable
