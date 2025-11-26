@@ -1,5 +1,6 @@
 using System;
 using System.IO;
+using System.Collections.Generic;
 using Tomlyn;
 using Tomlyn.Model;
 
@@ -27,6 +28,13 @@ public class Config
     /// Default: 60 (1 hour)
     /// </summary>
     public int LongTimeElapsedMinutes { get; set; } = 60;
+
+    /// <summary>
+    /// A list of executable names whose windows should be ignored (no IME toast shown).
+    /// Case-insensitive. You can specify with or without the .exe suffix.
+    /// Example: ["msedgewebview2.exe", "MyApp", "Code.exe"]
+    /// </summary>
+    public List<string> ExcludeExecutables { get; set; } = new();
 
     /// <summary>
     /// Load configuration from the platform-dependent location.
@@ -59,9 +67,25 @@ public class Config
                     config.LongTimeElapsedMinutes = Convert.ToInt32(longTimeThreshold);
                 }
 
+                // Optional array for excluded executables
+                if (tomlTable.TryGetValue("ExcludeExecutables", out var excludeListRaw) && excludeListRaw is TomlArray arr)
+                {
+                    foreach (var item in arr)
+                    {
+                        if (item is string s && !string.IsNullOrWhiteSpace(s))
+                        {
+                            config.ExcludeExecutables.Add(s.Trim());
+                        }
+                    }
+                }
+
                 if (App.LogLevel >= 2)
                 {
                     App.log($"Configuration loaded from: {configPath}");
+                    if (config.ExcludeExecutables.Count > 0 && App.LogLevel >= 3)
+                    {
+                        App.log($"Excluded executables: {string.Join(", ", config.ExcludeExecutables)}");
+                    }
                 }
             }
             catch (Exception ex)
@@ -125,6 +149,11 @@ WindowChangeThresholdSeconds = 300
 # This ensures the toast appears periodically even if you stay in the same window
 # Default: 60 (1 hour)
 LongTimeElapsedMinutes = 60
+
+# Executable names whose windows should be ignored (no toast displayed)
+# Case-insensitive; specify with or without .exe
+# Example: [""msedgewebview2.exe"", ""MyEmbeddedHost"", ""SomeApp.exe""]
+ExcludeExecutables = []
 ";
             File.WriteAllText(configPath, defaultConfig);
 

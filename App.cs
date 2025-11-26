@@ -2,6 +2,8 @@ using System.Runtime.InteropServices;
 using System.Windows.Automation;
 using System.Reflection;
 using System.Diagnostics;
+using System.IO;
+using System.Linq;
 namespace IMEInd;
 
 public enum ToastStyle
@@ -364,6 +366,7 @@ class App
         private nint lastWindow = IntPtr.Zero;
         private Screen lastScreen = Screen.PrimaryScreen!;
         private readonly Config config;
+        private readonly HashSet<string> excludeSet = new HashSet<string>();
         // For ancestor retrieval
         private const uint GA_ROOT = 2;
 
@@ -485,6 +488,14 @@ class App
                 {
                     log($"Initial resolved window handle: {candidate}");
                 }
+                if (IsExcludedWindow(candidate))
+                {
+                    if (LogLevel >= 3)
+                    {
+                        log($"Initial window suppressed (blacklisted). Handle: {candidate}");
+                    }
+                    return IntPtr.Zero;
+                }
                 return candidate;
             }
 
@@ -499,6 +510,14 @@ class App
                 {
                     log($"Focused element editable; using resolved handle: {candidate}");
                 }
+                if (IsExcludedWindow(candidate))
+                {
+                    if (LogLevel >= 3)
+                    {
+                        log($"Editable window suppressed (blacklisted). Handle: {candidate}");
+                    }
+                    return lastWindow; // keep previous
+                }
                 return candidate;
             }
 
@@ -509,9 +528,25 @@ class App
                 {
                     log($"Non-editable focus; updating window to new handle: {candidate}");
                 }
+                if (IsExcludedWindow(candidate))
+                {
+                    if (LogLevel >= 3)
+                    {
+                        log($"Non-editable window change suppressed (blacklisted). Handle: {candidate}");
+                    }
+                    return lastWindow;
+                }
                 return candidate;
             }
 
+            if (IsExcludedWindow(lastWindow))
+            {
+                if (LogLevel >= 3)
+                {
+                    log($"Existing window is now excluded; returning zero handle.");
+                }
+                return IntPtr.Zero;
+            }
             return lastWindow;
         }
 
@@ -543,7 +578,10 @@ class App
             {
                 log($"Initial IME: {lastIME.LangID}, Window: {lastWindow}, Screen: {lastScreen.DeviceName}, Time: {lastTime}");
             }
-            FirstRun?.Invoke(lastIME, lastScreen);
+            if (!IsExcludedWindow(lastWindow))
+            {
+                FirstRun?.Invoke(lastIME, lastScreen);
+            }
             timer.Start();
         }
 
@@ -566,6 +604,27 @@ class App
         public Listener()
         {
             config = Config.Load();
+            // Build normalized blacklist set (both with and without .exe extensions)
+            foreach (var name in config.ExcludeExecutables)
+            {
+                var trimmed = name.Trim();
+                if (string.IsNullOrEmpty(trimmed)) continue;
+                var lower = trimmed.ToLowerInvariant();
+                if (lower.EndsWith(".exe"))
+                {
+                    excludeSet.Add(lower);
+                    excludeSet.Add(lower[..^4]);
+                }
+                else
+                {
+                    excludeSet.Add(lower);
+                    excludeSet.Add(lower + ".exe");
+                }
+            }
+            if (excludeSet.Count > 0 && LogLevel >= 2)
+            {
+                App.log($"Process blacklist loaded: {string.Join(", ", excludeSet)}");
+            }
             timer = new System.Windows.Forms.Timer { Interval = config.TimerIntervalMs };
             timer.Tick += (_, __) =>
             {
@@ -583,7 +642,12 @@ class App
                     {
                         log($"IME changed to: {lastIME.LangID}, Window: {lastWindow}, Screen: {lastScreen.DeviceName}, Time: {lastTime}");
                     }
-                    OnInputLangChange?.Invoke(lastIME, lastScreen);
+                    // Use the actual current window for exclusion, not the possibly retained lastWindow
+                    var currentFocusWindow = GetForegroundInputWindow();
+                    if (!IsExcludedWindow(currentFocusWindow))
+                    {
+                        OnInputLangChange?.Invoke(lastIME, lastScreen);
+                    }
                 }
             };
             timer.Tick += (_, __) =>
@@ -605,6 +669,14 @@ class App
                 }
                 if (currentWindow != lastWindow && ((now - lastTime).TotalSeconds >= config.WindowChangeThresholdSeconds || GetScreenFromWindowHandle(currentWindow).DeviceName != lastScreen.DeviceName))
                 {
+                    if (IsExcludedWindow(currentWindow))
+                    {
+                        if (LogLevel >= 3)
+                        {
+                            log($"Window change suppressed (blacklisted). Handle: {currentWindow}");
+                        }
+                        return; // do not update state
+                    }
                     lastWindow = currentWindow;
                     forceUpdateTime();
                     forceUpdateIME();
@@ -613,7 +685,10 @@ class App
                     {
                         log($"Window changed to: {lastWindow}, IME: {lastIME.LangID}, Screen: {lastScreen.DeviceName}, Time: {lastTime}");
                     }
-                    OnFocusChanged?.Invoke(lastIME, lastScreen);
+                    if (!IsExcludedWindow(lastWindow))
+                    {
+                        OnFocusChanged?.Invoke(lastIME, lastScreen);
+                    }
                 }
             };
             timer.Tick += (_, __) =>
@@ -628,7 +703,11 @@ class App
                     {
                         log($"Long time elapsed with no changes. IME: {lastIME.LangID}, Window: {lastWindow}, Screen: {lastScreen.DeviceName}, Time: {lastTime}");
                     }
-                    OnLongTimeElapsed?.Invoke(lastIME, lastScreen);
+                    var currentFocusWindow = GetForegroundInputWindow();
+                    if (!IsExcludedWindow(currentFocusWindow))
+                    {
+                        OnLongTimeElapsed?.Invoke(lastIME, lastScreen);
+                    }
                 }
             };
         }
@@ -642,5 +721,35 @@ class App
 
         [DllImport("user32.dll")] static extern IntPtr GetKeyboardLayout(uint idThread);
         [DllImport("kernel32.dll")] static extern uint GetCurrentThreadId();
+
+        private bool IsExcludedWindow(IntPtr hwnd)
+        {
+            if (hwnd == IntPtr.Zero || excludeSet.Count == 0) return false;
+            try
+            {
+                uint pid;
+                GetWindowThreadProcessId(hwnd, out pid);
+                if (pid == 0) return false;
+                Process? proc = null;
+                try { proc = Process.GetProcessById((int)pid); } catch { return false; }
+                if (proc == null) return false;
+                string exeName;
+                try
+                {
+                    exeName = Path.GetFileName(proc.MainModule?.FileName) ?? proc.ProcessName + ".exe";
+                }
+                catch
+                {
+                    exeName = proc.ProcessName + ".exe";
+                }
+                var lower = exeName.ToLowerInvariant();
+                var baseName = lower.EndsWith(".exe") ? lower[..^4] : lower;
+                return excludeSet.Contains(lower) || excludeSet.Contains(baseName);
+            }
+            catch
+            {
+                return false;
+            }
+        }
     }
 }

@@ -15,3 +15,8 @@ WindowChangeThresholdSeconds = 300
 # This ensures the toast appears periodically even if you stay in the same window
 # Default: 60 (1 hour)
 LongTimeElapsedMinutes = 60
+
+# Executable names whose windows should be ignored (no toast displayed)
+# Case-insensitive; specify with or without .exe
+# Example: ["msedgewebview2.exe", "MyEmbeddedHost", "SomeApp.exe"]
+ExcludeExecutables = []
