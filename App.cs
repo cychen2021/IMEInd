@@ -111,11 +111,61 @@ sealed class ToastForm : Form
 
 class App
 {
+    // 0: None, 1: Error, 2: Info, 3: Debug
+    public static int LogLevel = 2;
+    private static readonly object LogLock = new();
+    private static string? LogFilePath;
+
+    static App()
+    {
+#if DEBUG
+        try
+        {
+            AllocConsole();
+            Console.WriteLine("[DEBUG] Console allocated. IMEInd starting...");
+        }
+        catch { /* If console allocation fails, continue silently. */ }
+#endif
+
+        try
+        {
+            var appDataPath = Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData);
+            var logDir = Path.Combine(appDataPath, "IMEInd");
+            Directory.CreateDirectory(logDir);
+            LogFilePath = Path.Combine(logDir, "IMEInd.log");
+
+            // Allow overriding log level via environment variable IMEIND_LOGLEVEL (0-3)
+            var env = Environment.GetEnvironmentVariable("IMEIND_LOGLEVEL");
+            if (!string.IsNullOrWhiteSpace(env) && int.TryParse(env, out var lvl))
+            {
+                LogLevel = Math.Min(3, Math.Max(0, lvl));
+            }
+        }
+        catch { /* Ignore logging init errors */ }
+    }
+
     public static void log(string msg)
     {
-        Console.Error.WriteLine($"[LOGGING] {msg}");
+        var line = $"[{DateTime.Now:yyyy-MM-dd HH:mm:ss}] {msg}";
+#if DEBUG
+        // In Debug we have a console allocated; write there
+        try { Console.Error.WriteLine($"[LOGGING] {line}"); } catch { }
+#else
+        // In Release there is typically no console; emit to debug listeners
+        try { System.Diagnostics.Debug.WriteLine(line); } catch { }
+#endif
+        try
+        {
+            if (!string.IsNullOrEmpty(LogFilePath))
+            {
+                lock (LogLock)
+                {
+                    File.AppendAllText(LogFilePath, line + Environment.NewLine);
+                }
+            }
+        }
+        catch { /* Swallow logging failures */ }
     }
-    public static int LogLevel = 2; // 0: None, 1: Error, 2: Info, 3: Debug
 
     [DllImport("user32.dll")] static extern IntPtr GetForegroundWindow();
     [DllImport("user32.dll")] static extern uint GetWindowThreadProcessId(IntPtr hWnd, out uint lpdwProcessId);
@@ -281,14 +331,10 @@ class App
     [STAThread]
     public void Run()
     {
-#if DEBUG
-        try
+        if (LogLevel >= 2 && LogFilePath is not null)
         {
-            AllocConsole();
-            Console.WriteLine("[DEBUG] Console allocated. IMEInd starting...");
+            log($"Log file path: {LogFilePath}");
         }
-        catch { /* If console allocation fails, continue silently. */ }
-#endif
 
         // Create default configuration file if it doesn't exist
         Config.CreateDefault();

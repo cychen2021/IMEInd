@@ -45,6 +45,12 @@ public class Config
         var config = new Config();
         var configPath = GetConfigPath();
 
+        // Always log the configuration path we will use/load
+        if (App.LogLevel >= 2)
+        {
+            App.log($"Configuration file path: {configPath}");
+        }
+
         if (File.Exists(configPath))
         {
             try
