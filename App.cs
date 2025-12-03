@@ -669,7 +669,7 @@ class App
             }
             if (excludeSet.Count > 0 && LogLevel >= 2)
             {
-                App.log($"Process blacklist loaded: {string.Join(", ", excludeSet)}");
+                log($"Process blacklist loaded: {string.Join(", ", excludeSet)}");
             }
             timer = new System.Windows.Forms.Timer { Interval = config.TimerIntervalMs };
             timer.Tick += (_, __) =>
