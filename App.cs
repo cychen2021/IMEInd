@@ -536,7 +536,7 @@ class App
                 }
                 if (IsExcludedWindow(candidate))
                 {
-                    if (LogLevel >= 3)
+                    if (LogLevel >= 2)
                     {
                         log($"Initial window suppressed (blacklisted). Handle: {candidate}");
                     }
@@ -558,7 +558,7 @@ class App
                 }
                 if (IsExcludedWindow(candidate))
                 {
-                    if (LogLevel >= 3)
+                    if (LogLevel >= 2)
                     {
                         log($"Editable window suppressed (blacklisted). Handle: {candidate}");
                     }
@@ -576,7 +576,7 @@ class App
                 }
                 if (IsExcludedWindow(candidate))
                 {
-                    if (LogLevel >= 3)
+                    if (LogLevel >= 2)
                     {
                         log($"Non-editable window change suppressed (blacklisted). Handle: {candidate}");
                     }
@@ -587,7 +587,7 @@ class App
 
             if (IsExcludedWindow(lastWindow))
             {
-                if (LogLevel >= 3)
+                if (LogLevel >= 2)
                 {
                     log($"Existing window is now excluded; returning zero handle.");
                 }
@@ -717,7 +717,7 @@ class App
                 {
                     if (IsExcludedWindow(currentWindow))
                     {
-                        if (LogLevel >= 3)
+                        if (LogLevel >= 2)
                         {
                             log($"Window change suppressed (blacklisted). Handle: {currentWindow}");
                         }
