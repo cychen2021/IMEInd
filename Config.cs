@@ -159,7 +159,7 @@ LongTimeElapsedMinutes = 60
 # Executable names whose windows should be ignored (no toast displayed)
 # Case-insensitive; specify with or without .exe
 # Example: [""msedgewebview2.exe"", ""MyEmbeddedHost"", ""SomeApp.exe""]
-ExcludeExecutables = [""MuMuNxDevice.exe"", ""MuMuNxMain.exe""]
+ExcludeExecutables = [""MuMuNxDevice.exe"", ""MuMuNxMain.exe"", ""zotero.exe""]
 ";
             File.WriteAllText(configPath, defaultConfig);
 
