@@ -106,19 +106,19 @@ sealed class ToastForm : Form
                 // Position indicator above the input field, centered horizontally
                 var x = (int)(boundingRect.X + boundingRect.Width / 2 - Width / 2);
                 var y = (int)(boundingRect.Y - Height - 10); // 10px gap above the input field
-                
+
                 // Ensure the indicator stays within screen bounds
                 var screenBounds = screen.Bounds;
                 x = Math.Max(screenBounds.X, Math.Min(x, screenBounds.X + screenBounds.Width - Width));
                 y = Math.Max(screenBounds.Y, Math.Min(y, screenBounds.Y + screenBounds.Height - Height));
-                
+
                 // If there's not enough space above, position below the input field
                 if (y < screenBounds.Y + 20)
                 {
                     y = (int)(boundingRect.Y + boundingRect.Height + 10);
                     y = Math.Min(y, screenBounds.Y + screenBounds.Height - Height);
                 }
-                
+
                 nearPoint = new Point(x, y);
             }
             catch
@@ -364,7 +364,7 @@ class App
         // explicit "Unavailable" with strike-through to inform the user.
         var text = ime.IsSupportedIME ? ime.Name : "Unavailable";
         var toastStyle = ime.IsSupportedIME ? ToastStyle.Default : ToastStyle.StrikeThrough;
-        
+
         AutomationElement? inputElement = null;
         if (_config?.FloatingMode == true)
         {
@@ -381,7 +381,7 @@ class App
                 // If getting focused element fails, fall back to default positioning
             }
         }
-        
+
         indicator.ShowToast(text, screen, toastStyle, inputElement);
     }
 
@@ -395,7 +395,7 @@ class App
 
         // Create default configuration file if it doesn't exist
         Config.CreateDefault();
-        
+
         // Load configuration
         _config = Config.Load();
 
