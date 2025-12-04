@@ -37,6 +37,12 @@ public class Config
     public List<string> ExcludeExecutables { get; set; } = new();
 
     /// <summary>
+    /// When true, the indicator will be positioned around the input field instead of at a fixed screen position.
+    /// Default: false
+    /// </summary>
+    public bool FloatingMode { get; set; } = false;
+
+    /// <summary>
     /// Load configuration from the platform-dependent location.
     /// On Windows: %APPDATA%\IMEInd\config.toml
     /// </summary>
@@ -83,6 +89,11 @@ public class Config
                             config.ExcludeExecutables.Add(s.Trim());
                         }
                     }
+                }
+
+                if (tomlTable.TryGetValue("FloatingMode", out var floatingMode))
+                {
+                    config.FloatingMode = Convert.ToBoolean(floatingMode);
                 }
 
                 if (App.LogLevel >= 2)
@@ -160,6 +171,10 @@ LongTimeElapsedMinutes = 60
 # Case-insensitive; specify with or without .exe
 # Example: [""msedgewebview2.exe"", ""MyEmbeddedHost"", ""SomeApp.exe""]
 ExcludeExecutables = [""MuMuNxDevice.exe"", ""MuMuNxMain.exe"", ""zotero.exe""]
+
+# When true, the indicator will be positioned around the input field instead of at a fixed screen position
+# Default: false
+FloatingMode = false
 ";
             File.WriteAllText(configPath, defaultConfig);
 

@@ -76,17 +76,14 @@ sealed class ToastForm : Form
         _timer = new System.Windows.Forms.Timer { Interval = 5000 };
         _timer.Tick += (_, __) => Hide();
     }
-    public void ShowToast(string text, Screen screen, ToastStyle style = ToastStyle.Default)
+    public void ShowToast(string text, Screen screen, ToastStyle style = ToastStyle.Default, AutomationElement? inputElement = null)
     {
         // Ensure UI updates happen on the UI thread
         if (InvokeRequired)
         {
-            BeginInvoke(new Action(() => ShowToast(text, screen, style)));
+            BeginInvoke(new Action(() => ShowToast(text, screen, style, inputElement)));
             return;
         }
-        var centerX = screen.Bounds.X + screen.Bounds.Width / 2;
-        var y = screen.Bounds.Y + screen.Bounds.Height - 200 - Height;
-        var nearPoint = new Point(centerX, Math.Max(screen.Bounds.Y, y));
 
         _label.Text = text;
         // Update font style to allow future style extensions
@@ -98,6 +95,47 @@ sealed class ToastForm : Form
         _label.Location = new Point(_icon.Width, 0);
 
         Opacity = 0.95;
+
+        Point nearPoint;
+        if (inputElement != null)
+        {
+            // Floating mode: position indicator around the input field
+            try
+            {
+                var boundingRect = inputElement.Current.BoundingRectangle;
+                // Position indicator above the input field, centered horizontally
+                var x = (int)(boundingRect.X + boundingRect.Width / 2 - Width / 2);
+                var y = (int)(boundingRect.Y - Height - 10); // 10px gap above the input field
+                
+                // Ensure the indicator stays within screen bounds
+                var screenBounds = screen.Bounds;
+                x = Math.Max(screenBounds.X, Math.Min(x, screenBounds.X + screenBounds.Width - Width));
+                y = Math.Max(screenBounds.Y, Math.Min(y, screenBounds.Y + screenBounds.Height - Height));
+                
+                // If there's not enough space above, position below the input field
+                if (y < screenBounds.Y + 20)
+                {
+                    y = (int)(boundingRect.Y + boundingRect.Height + 10);
+                    y = Math.Min(y, screenBounds.Y + screenBounds.Height - Height);
+                }
+                
+                nearPoint = new Point(x, y);
+            }
+            catch
+            {
+                // Fallback to default position if getting bounding rectangle fails
+                var centerX = screen.Bounds.X + screen.Bounds.Width / 2;
+                var y = screen.Bounds.Y + screen.Bounds.Height - 200 - Height;
+                nearPoint = new Point(centerX, Math.Max(screen.Bounds.Y, y));
+            }
+        }
+        else
+        {
+            // Default mode: position at fixed location near bottom of screen
+            var centerX = screen.Bounds.X + screen.Bounds.Width / 2;
+            var y = screen.Bounds.Y + screen.Bounds.Height - 200 - Height;
+            nearPoint = new Point(centerX, Math.Max(screen.Bounds.Y, y));
+        }
 
         Location = nearPoint;
 
@@ -115,6 +153,7 @@ class App
     public static int LogLevel = 2;
     private static readonly object LogLock = new();
     private static string? LogFilePath;
+    private static Config? _config;
 
     static App()
     {
@@ -325,7 +364,25 @@ class App
         // explicit "Unavailable" with strike-through to inform the user.
         var text = ime.IsSupportedIME ? ime.Name : "Unavailable";
         var toastStyle = ime.IsSupportedIME ? ToastStyle.Default : ToastStyle.StrikeThrough;
-        indicator.ShowToast(text, screen, toastStyle);
+        
+        AutomationElement? inputElement = null;
+        if (_config?.FloatingMode == true)
+        {
+            try
+            {
+                var focusedElement = AutomationElement.FocusedElement;
+                if (focusedElement != null && IsEditable(focusedElement))
+                {
+                    inputElement = focusedElement;
+                }
+            }
+            catch
+            {
+                // If getting focused element fails, fall back to default positioning
+            }
+        }
+        
+        indicator.ShowToast(text, screen, toastStyle, inputElement);
     }
 
     [STAThread]
@@ -338,6 +395,9 @@ class App
 
         // Create default configuration file if it doesn't exist
         Config.CreateDefault();
+        
+        // Load configuration
+        _config = Config.Load();
 
         ApplicationConfiguration.Initialize();
         var indicator = new ToastForm();
