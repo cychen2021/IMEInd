@@ -322,8 +322,8 @@ class App
             log($"Showing IME toast: {ime.LangID} on screen {screen.DeviceName}");
         }
         // When the lookup indicates the current layout is not a supported IME, display
-        // explicit "Unawailable" with strike-through to inform the user.
-        var text = ime.IsSupportedIME ? ime.Name : "Unawailable";
+        // explicit "Unavailable" with strike-through to inform the user.
+        var text = ime.IsSupportedIME ? ime.Name : "Unavailable";
         var toastStyle = ime.IsSupportedIME ? ToastStyle.Default : ToastStyle.StrikeThrough;
         indicator.ShowToast(text, screen, toastStyle);
     }
