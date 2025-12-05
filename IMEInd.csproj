@@ -20,6 +20,8 @@
     <!-- Use the same icon for the packaged application and the tray icon -->
     <ApplicationIcon>resources/icon.ico</ApplicationIcon>
     <Win32Icon>resources/icon.ico</Win32Icon>
+    <!-- Exclude nested test project to avoid CS0579 duplicate attribute errors -->
+    <DefaultItemExcludes>$(DefaultItemExcludes);IMEInd.Tests\**</DefaultItemExcludes>
   </PropertyGroup>
 
   <ItemGroup>

@@ -12,7 +12,7 @@ public enum ToastStyle
     StrikeThrough = 1,
 }
 
-sealed class ToastForm : Form
+public sealed class ToastForm : Form
 {
     readonly Label _label;
     readonly Label _icon;
@@ -147,7 +147,7 @@ sealed class ToastForm : Form
 }
 
 
-class App
+public class App
 {
     // 0: None, 1: Error, 2: Info, 3: Debug
     public static int LogLevel = 2;
