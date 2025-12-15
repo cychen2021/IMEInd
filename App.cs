@@ -371,14 +371,31 @@ public class App
             try
             {
                 var focusedElement = AutomationElement.FocusedElement;
+                // Only show floating mode when an input element has actual keyboard focus
                 if (focusedElement != null && IsEditable(focusedElement))
                 {
                     inputElement = focusedElement;
                 }
+                else
+                {
+                    // If no editable element has focus, don't show the toast in floating mode
+                    if (LogLevel >= 2)
+                    {
+                        log($"Floating mode: no editable element with focus, hiding toast");
+                    }
+                    indicator.Hide();
+                    return;
+                }
             }
             catch
             {
-                // If getting focused element fails, fall back to default positioning
+                // If getting focused element fails, don't show the toast in floating mode
+                if (LogLevel >= 2)
+                {
+                    log($"Floating mode: failed to get focused element, hiding toast");
+                }
+                indicator.Hide();
+                return;
             }
         }
 
